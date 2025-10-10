@@ -1,8 +1,8 @@
 import Foundation
 
-final class FileWatcher: NSObject, NSFilePresenter {
-    let presentedItemURL: URL?
-    let presentedItemOperationQueue: OperationQueue = {
+final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
+    nonisolated let presentedItemURL: URL?
+    nonisolated let presentedItemOperationQueue: OperationQueue = {
         let q = OperationQueue()
         q.maxConcurrentOperationCount = 1
         return q
@@ -21,7 +21,7 @@ final class FileWatcher: NSObject, NSFilePresenter {
         NSFileCoordinator.removeFilePresenter(self)
     }
 
-    func presentedItemDidChange() {
+    nonisolated func presentedItemDidChange() {
         onChange()
     }
 }

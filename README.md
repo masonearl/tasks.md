@@ -39,7 +39,6 @@ Store everything IN tasks.md using custom markdown syntax:
 ## Work
 - [ ] Prepare for iOS debugging test @priority(high) @remind(2025-10-15T09:00)
 - [ ] Fix map zoom issue @priority(medium) @due(2025-10-20)
-- [x] Update iPad version @completed(2025-10-08)
 
 ## Personal
 - [ ] Call dentist @remind(2025-10-10T14:00)
@@ -256,4 +255,11 @@ Tasks.md App/
 - Test file watching thoroughly (Cursor saves, manual edits, etc.)
 - Handle edge cases (file moved, deleted, conflicts)
 - Consider version control (Git commits on changes)
+
+
+## Completed
+- [x] Update iPad version @completed(2025-10-08)
+
+
+
 

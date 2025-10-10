@@ -6,29 +6,54 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct Tasks_mdApp: App {
     @StateObject private var appModel = AppModel()
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @State private var showAbout = false
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appModel)
+                .sheet(isPresented: $showAbout) {
+                    AboutView()
+                }
         }
-        .modelContainer(sharedModelContainer)
+        #if os(macOS)
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About tasks.md") {
+                    showAbout = true
+                }
+            }
+            CommandGroup(after: .newItem) {
+                Button("Choose tasks.md File...") {
+                    NotificationCenter.default.post(name: .openFilePicker, object: nil)
+                }
+                .keyboardShortcut("O", modifiers: .command)
+                
+                Button("Add New Task") {
+                    NotificationCenter.default.post(name: .addNewTask, object: nil)
+                }
+                .keyboardShortcut("N", modifiers: .command)
+                .disabled(appModel.selectedTasksFileUrl == nil)
+            }
+            CommandGroup(replacing: .help) {
+                Button("tasks.md Help") {
+                    if let url = URL(string: "https://github.com/yourusername/tasks.md") {
+                        #if os(macOS)
+                        NSWorkspace.shared.open(url)
+                        #endif
+                    }
+                }
+            }
+        }
+        #endif
     }
+}
+
+extension Notification.Name {
+    static let openFilePicker = Notification.Name("openFilePicker")
+    static let addNewTask = Notification.Name("addNewTask")
 }

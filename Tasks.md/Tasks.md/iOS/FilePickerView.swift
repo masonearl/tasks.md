@@ -1,5 +1,8 @@
+// This file is iOS-only; guard it so mac builds don't compile UIKit types
+#if os(iOS)
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct MarkdownDocumentPicker: UIViewControllerRepresentable {
     var onPick: (URL) -> Void
@@ -22,9 +25,13 @@ struct MarkdownDocumentPicker: UIViewControllerRepresentable {
         init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
+            // Start accessing security-scoped resource immediately
+            let didStart = url.startAccessingSecurityScopedResource()
+            print("🔐 Started accessing security-scoped resource: \(didStart)")
             onPick(url)
         }
     }
 }
+#endif
 
 

@@ -69,6 +69,7 @@ public enum MarkdownParser {
             case "due": tags.dueDate = parseDate(value)
             case "remind": tags.remindAt = parseDate(value)
             case "completed": tags.completedAt = parseDate(value)
+            case "repeat": tags.custom["repeat"] = value
             default: tags.custom[key] = value
             }
             if let r = Range(m.range, in: afterBox) { title.removeSubrange(r) }

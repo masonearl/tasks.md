@@ -23,6 +23,21 @@ struct TaskListView: View {
                             }
                         }
                     }
+                    
+                    // Show Notes section if it exists
+                    if let notesSection = store.sections.first(where: { $0.title.lowercased().contains("note") }) {
+                        Section("Notes") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(notesSection.tasks, id: \.id) { note in
+                                    Text(note.title)
+                                        .font(.body)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.vertical, 4)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
                 }
             }
         }
