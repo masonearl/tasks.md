@@ -1,265 +1,107 @@
-# Tasks.md App
+# Tasks.md
 
-A native macOS and iOS app that syncs with your tasks.md file, adding smart features like reminders, prioritization, and notifications while keeping your markdown file as the single source of truth.
+A native SwiftUI app for iOS and macOS that treats your **tasks.md** markdown file as the database. Edit tasks in Cursor (or any text editor); the app watches the same file and stays in sync via iCloud Drive (or any folder you pick).
 
-## Core Concept
+**App Store:** [Tasks.md](https://apps.apple.com/us/app/tasks-md/id6753879372) · Bundle ID `buildmase.app.Tasks-md` · One-time purchase · Seller Mason Earl  
+**Source:** [github.com/masonearl/tasks.md](https://github.com/masonearl/tasks.md)
 
-**tasks.md** is your database. The app enhances it with features while maintaining full compatibility with any text editor (especially Cursor).
-
----
-
-## Architecture
-
-### Single Source of Truth
-- **tasks.md** = Master database (readable, portable, future-proof)
-- Stored in **iCloud Drive** for automatic Mac/iOS sync
-- Primary editing in **Cursor**
-- Apps add enhanced features on top
-
-### Two-Way Sync Flow
-1. **Cursor edits** → Saves to tasks.md → iCloud syncs → Apps detect change → Update UI
-2. **App edits** (check task, add reminder) → Update tasks.md → iCloud syncs → Cursor shows changes
-
-### File Watching
-- Mac/iOS apps use **FileManager** + **FilePresenter** APIs
-- Monitor tasks.md for changes in real-time
-- When file changes (from Cursor or other device), app reloads automatically
-- iCloud handles the heavy lifting of sync
+> Live store listing is **v1.0**. This repo targets **v1.1** (marketing `1.1`, build `2+`).
 
 ---
 
-## Data Storage Options
+## What it does
 
-### Option 1: Pure Markdown (Recommended)
-Store everything IN tasks.md using custom markdown syntax:
+- Opens a local `.md` file (security-scoped bookmark remembers your choice)
+- Parses `##` / `###` sections and `- [ ]` / `- [x]` checkboxes
+- Supports tags: `@priority(...)`, `@due(...)`, `@remind(...)`, `@repeat(...)`, `@completed(...)`
+- Checking a box, editing a title, or adding a task writes back to the same markdown file
+- **File watching** (DispatchSource + NSFilePresenter + short mtime/size poll) reloads when Cursor or another editor saves
+- First launch copies a sample `My Tasks.md` into Documents if nothing is bookmarked yet
+- Foreground / scene-active reload as a safety net
+- No accounts, no subscription, no analytics
+
+---
+
+## Requirements
+
+- iOS **18.6+** / macOS **15.6+** (as set in the Xcode project)
+- Xcode 16+ recommended for building
+- Optional: put `tasks.md` in iCloud Drive so phone and Mac share one file
+
+---
+
+## Markdown format
 
 ```markdown
 # Tasks
 
 ## Work
-- [ ] Prepare for iOS debugging test @priority(high) @remind(2025-10-15T09:00)
-- [ ] Fix map zoom issue @priority(medium) @due(2025-10-20)
+- [ ] Ship v1.1 file watching @priority(high) @due(2026-08-20)
+- [x] Publish App Store build @completed(2025-10-13T17:17:57Z)
 
-## Personal
-- [ ] Call dentist @remind(2025-10-10T14:00)
+## Habits
+- [ ] Daily review @repeat(daily)
 ```
 
-**Pros:**
-- Everything in one file
-- Still readable in Cursor
-- No separate metadata to manage
-- Portable and future-proof
-
-**Cons:**
-- Slightly verbose with tags
-- Need to parse custom syntax
-
-### Option 2: Companion Metadata File
-- **tasks.md** = Clean tasks only (what you see in Cursor)
-- **tasks.meta.json** = App-specific metadata (reminders, priority, colors, etc.)
-
-Example tasks.md:
-```markdown
-# Tasks
-
-## Work
-- [ ] Prepare for iOS debugging test
-- [ ] Fix map zoom issue
-```
-
-Example tasks.meta.json:
-```json
-{
-  "tasks": {
-    "Prepare for iOS debugging test": {
-      "priority": "high",
-      "reminder": "2025-10-15T09:00:00Z",
-      "tags": ["work", "important"]
-    },
-    "Fix map zoom issue": {
-      "priority": "medium",
-      "due": "2025-10-20T23:59:59Z"
-    }
-  }
-}
-```
-
-**Pros:**
-- Clean, minimal tasks.md
-- Rich metadata without cluttering
-- Easy to add features without changing markdown
-
-**Cons:**
-- Two files to manage
-- Tasks.md must match metadata (need sync logic)
+The app is the UI; the file remains portable plain text.
 
 ---
 
-## Features
-
-### Core Features (MVP)
-- ✅ Real-time sync with tasks.md file
-- ✅ View all tasks organized by sections
-- ✅ Check off completed tasks → updates markdown
-- ✅ Add new tasks from app → writes to markdown
-- ✅ Works on Mac and iOS (iCloud sync)
-
-### Enhanced Features
-- 📅 **Reminders** - Set notifications for tasks
-- 🎯 **Priority Levels** - High, Medium, Low with visual indicators
-- 📆 **Due Dates** - Calendar integration
-- 🏷️ **Tags & Filters** - Organize and filter tasks
-- 📊 **Progress Tracking** - Daily/weekly completion stats
-- 🔍 **Search** - Quick find across all tasks
-- 🎨 **Custom Themes** - Clean, minimal dark mode (Notion-like)
-
-### Advanced Features (Future)
-- 🔄 **Recurring Tasks** - Daily, weekly, monthly repeats
-- 📍 **Location Reminders** - Trigger when near a place
-- 🧠 **Smart Suggestions** - AI-powered task prioritization
-- 📈 **Analytics** - Productivity insights
-- 🔗 **Quick Actions** - Siri shortcuts, widgets
-
----
-
-## Tech Stack
-
-### Mac App
-- **SwiftUI** - Modern UI framework
-- **CloudKit/iCloud Drive** - File sync
-- **FileManager** - Direct file access
-- **Combine** - Reactive data flow
-- **UserNotifications** - Local reminders
-
-### iOS App
-- **SwiftUI** - Shared UI with Mac
-- **CloudKit/iCloud Drive** - Sync with Mac
-- **UserNotifications** - Push notifications
-- **WidgetKit** - Home screen widgets (optional)
-
-### Parsing
-- **Swift Markdown Parser** - For parsing tasks.md
-  - Or custom regex-based parser
-- **Codable** - For JSON metadata (if using Option 2)
-
----
-
-## File Structure
+## Project layout
 
 ```
-Tasks.md App/
-├── README.md                    # This file
-├── ARCHITECTURE.md              # Detailed technical architecture
-├── FEATURES.md                  # Feature specs and roadmap
-├── TasksApp/                    # Xcode project
-│   ├── Shared/                  # Shared code (Mac + iOS)
-│   │   ├── Models/
-│   │   │   ├── Task.swift
-│   │   │   ├── TaskSection.swift
-│   │   │   └── TaskMetadata.swift
-│   │   ├── Services/
-│   │   │   ├── TaskFileManager.swift
-│   │   │   ├── MarkdownParser.swift
-│   │   │   └── CloudSyncService.swift
-│   │   └── Views/
-│   │       ├── TaskListView.swift
-│   │       ├── TaskRowView.swift
-│   │       └── TaskDetailView.swift
-│   ├── macOS/                   # Mac-specific code
-│   │   └── ContentView.swift
-│   └── iOS/                     # iOS-specific code
-│       └── ContentView.swift
-└── Prototypes/                  # Quick test apps
+Tasks.md/
+├── Tasks.md/                 # App sources (synchronized Xcode folder)
+│   ├── Shared/               # Models, TaskStore, MarkdownParser, FileWatcher, views
+│   ├── iOS/                  # Document picker
+│   ├── macOS/                # NSOpenPanel picker
+│   ├── Tasks_mdApp.swift
+│   └── ContentView.swift
+├── Tasks.md.xcodeproj
+├── Tasks.mdTests/
+└── Tasks.mdUITests/
 ```
 
----
-
-## Implementation Plan
-
-### Phase 1: Basic Mac App (Week 1)
-1. Create SwiftUI Mac app
-2. File picker to select tasks.md location
-3. Parse markdown → display tasks
-4. File watcher for real-time updates
-5. Check off tasks → update file
-
-### Phase 2: Enhanced Features (Week 2)
-1. Add priority parsing/display
-2. Implement reminders with notifications
-3. Due dates with calendar view
-4. Tags and filtering
-
-### Phase 3: iOS App (Week 3)
-1. Port Mac app to iOS
-2. iCloud Drive integration
-3. Sync between devices
-4. Mobile-optimized UI
-
-### Phase 4: Polish (Week 4)
-1. Widgets (iOS)
-2. Quick actions
-3. Analytics dashboard
-4. Settings & customization
+Root docs (`README.md`, `FEATURES.md`, `ARCHITECTURE.md`) describe product intent and roadmap. Wishlist items in `FEATURES.md` that are not shipped stay unchecked.
 
 ---
 
-## Getting Started
+## Build & run
 
-### Prerequisites
-- macOS 14.0+ (for development)
-- Xcode 15.0+
-- iCloud account (for sync)
+1. Open `Tasks.md/Tasks.md.xcodeproj` in Xcode
+2. Select the **Tasks.md** scheme (iOS Simulator or My Mac)
+3. Ensure signing team `3FXGJUET7Y` (or your own) is selected
+4. Run
 
-### Development Setup
-1. Clone/create Xcode project
-2. Add FileManager + iCloud capabilities
-3. Create task.md test file
-4. Build and run
+### Verify file sync (v1.1)
 
----
-
-## Design Philosophy
-
-1. **Markdown First** - tasks.md remains readable and portable
-2. **Non-Destructive** - App never breaks your markdown file
-3. **Cursor-Friendly** - Edit naturally in Cursor, apps adapt
-4. **Simple & Clean** - Minimal, data-driven UI (no fluff)
-5. **Reliable Sync** - iCloud handles it, always in sync
+1. Run the app and choose (or keep) a `tasks.md` file
+2. Leave the app open
+3. In Cursor or TextEdit, add a line like `- [ ] Hello from Cursor` under a `##` section and save
+4. Within about a second the new task should appear in the app **without** tapping Refresh
+5. Toggle a checkbox in the app; the markdown file should update on disk
 
 ---
 
-## Why This Approach Works
+## Versioning
 
-✅ **Future-Proof** - If app breaks, tasks.md still works everywhere  
-✅ **Developer-Friendly** - Edit in Cursor where you already work  
-✅ **Cross-Platform** - Mac, iOS, iPad all stay in sync  
-✅ **Portable** - Move tasks.md anywhere, no vendor lock-in  
-✅ **Powerful** - Get app features without sacrificing simplicity  
+| | Live App Store | This branch (v1.1) |
+|--|--|--|
+| Marketing (`CFBundleShortVersionString`) | 1.0 | **1.1** |
+| Build (`CURRENT_PROJECT_VERSION`) | 1 (assumed from project) | **2** |
 
----
-
-## Next Steps
-
-1. Review this documentation
-2. Decide on metadata storage approach (Option 1 or 2)
-3. Create Xcode project structure
-4. Build Phase 1 MVP
-5. Test with real tasks.md file
-6. Iterate based on usage
+Keep marketing at **1.1** and bump build for each App Store archive.
 
 ---
 
-## Notes
+## Privacy & business model
 
-- Start simple, add features gradually
-- Test file watching thoroughly (Cursor saves, manual edits, etc.)
-- Handle edge cases (file moved, deleted, conflicts)
-- Consider version control (Git commits on changes)
+- Local file access only (user-selected / bookmarked)
+- No login, no server-side task storage
+- Paid up front on the App Store ($2.99 at launch)
 
+---
 
-## Completed
-- [x] Update iPad version @completed(2025-10-08)
+## Roadmap
 
-
-
-
+See [FEATURES.md](FEATURES.md) for ideas (widgets, Watch, collaboration, analytics, etc.). Those are **not** part of v1.1.
