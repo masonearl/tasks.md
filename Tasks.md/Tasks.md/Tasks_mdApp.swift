@@ -41,7 +41,7 @@ struct Tasks_mdApp: App {
             }
             CommandGroup(replacing: .help) {
                 Button("tasks.md Help") {
-                    if let url = URL(string: "https://github.com/yourusername/tasks.md") {
+                    if let url = URL(string: "https://github.com/masonearl/tasks.md") {
                         #if os(macOS)
                         NSWorkspace.shared.open(url)
                         #endif

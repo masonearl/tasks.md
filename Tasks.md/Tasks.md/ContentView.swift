@@ -81,7 +81,7 @@ struct ContentView: View {
 #endif
         .onAppear(perform: maybePromptForFile)
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active { appModel.loadFromDisk() }
+            if newPhase == .active { appModel.reloadOnForeground() }
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet(onChoose: { presentPicker() })

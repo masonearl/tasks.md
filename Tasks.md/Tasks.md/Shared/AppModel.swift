@@ -10,15 +10,21 @@ final class AppModel: ObservableObject {
 
     let bookmarks = BookmarkStore()
     private let fileCoordinator = FileCoordinatorService()
-    #if os(macOS)
     private var watcher: FileWatcher?
-    #endif
+    private var securityScopedURL: URL?
+    private var didStartSecurityAccess = false
+    private var lastLoadedSignature: String?
+    /// Ignore watcher callbacks briefly after our own writes settle via TaskStore.
+    private var ignoreExternalChangesUntil: Date = .distantPast
 
     init() {
         print("🚀 AppModel init - attempting to restore file")
         if let url = bookmarks.resolveBookmark() {
             print("✅ Found saved file: \(url.path)")
             selectedTasksFileUrl = url
+            // resolveBookmark already started security-scoped access
+            securityScopedURL = url
+            didStartSecurityAccess = true
             loadFromDisk()
             startWatching()
             store.bind(to: url)
@@ -52,6 +58,7 @@ final class AppModel: ObservableObject {
         // Set this as the selected file
         selectedTasksFileUrl = destinationUrl
         bookmarks.saveBookmark(for: destinationUrl)
+        holdSecurityAccess(to: destinationUrl)
         store.bind(to: destinationUrl)
         loadFromDisk()
         startWatching()
@@ -60,8 +67,11 @@ final class AppModel: ObservableObject {
 
     func setSelectedFile(_ url: URL) {
         print("📁 User selected file: \(url.path)")
+        stopWatching()
+        releaseSecurityAccess()
         selectedTasksFileUrl = url
         bookmarks.saveBookmark(for: url)
+        holdSecurityAccess(to: url)
         store.bind(to: url)
         loadFromDisk()
         startWatching()
@@ -69,11 +79,12 @@ final class AppModel: ObservableObject {
 
     func loadFromDisk() {
         guard let url = selectedTasksFileUrl else { return }
-        _ = url.startAccessingSecurityScopedResource()
-        defer { url.stopAccessingSecurityScopedResource() }
+        let nestedAccess = url.startAccessingSecurityScopedResource()
+        defer { if nestedAccess { url.stopAccessingSecurityScopedResource() } }
         do {
             let text = try fileCoordinator.read(url: url)
             store.load(from: text)
+            lastLoadedSignature = FileWatcher.signature(for: url)
             
             // Only process repeating tasks occasionally to avoid slow loading
             let lastProcessed = UserDefaults.standard.double(forKey: "lastRepeatProcessed")
@@ -81,27 +92,78 @@ final class AppModel: ObservableObject {
             let oneHour: TimeInterval = 3600
             
             if now - lastProcessed > oneHour {
+                ignoreExternalChanges(for: 1.0)
                 store.processRepeatingTasks()
                 UserDefaults.standard.set(now, forKey: "lastRepeatProcessed")
+                lastLoadedSignature = FileWatcher.signature(for: url)
             }
         } catch {
             print("Error loading file: \(error)")
         }
     }
 
-    #if os(macOS)
-    private func startWatching() {
-        guard let url = selectedTasksFileUrl else { return }
-        // Disable file watching for better performance on macOS
-        // watcher = FileWatcher(url: url) { [weak self] in
-        //     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-        //         self?.loadFromDisk()
-        //     }
-        // }
+    /// Called when the scene becomes active; always reloads from disk.
+    func reloadOnForeground() {
+        loadFromDisk()
     }
-    #else
-    private func startWatching() { }
-    #endif
+
+    private func handleExternalFileChange() {
+        guard Date() >= ignoreExternalChangesUntil else {
+            print("👀 Ignoring external change (own write window)")
+            return
+        }
+        guard let url = selectedTasksFileUrl else { return }
+        let signature = FileWatcher.signature(for: url)
+        if signature != nil, signature == lastLoadedSignature {
+            return
+        }
+        print("🔄 Reloading tasks.md after external edit")
+        loadFromDisk()
+    }
+
+    private func ignoreExternalChanges(for duration: TimeInterval) {
+        ignoreExternalChangesUntil = Date().addingTimeInterval(duration)
+    }
+
+    private func startWatching() {
+        stopWatching()
+        guard let url = selectedTasksFileUrl else { return }
+        holdSecurityAccess(to: url)
+        lastLoadedSignature = FileWatcher.signature(for: url)
+        watcher = FileWatcher(url: url) { [weak self] in
+            Task { @MainActor in
+                self?.handleExternalFileChange()
+            }
+        }
+        print("👀 Started watching: \(url.path)")
+    }
+
+    private func stopWatching() {
+        watcher?.stop()
+        watcher = nil
+    }
+
+    private func holdSecurityAccess(to url: URL) {
+        if let previous = securityScopedURL, previous != url {
+            if didStartSecurityAccess {
+                previous.stopAccessingSecurityScopedResource()
+            }
+            securityScopedURL = nil
+            didStartSecurityAccess = false
+        }
+        if securityScopedURL == nil {
+            didStartSecurityAccess = url.startAccessingSecurityScopedResource()
+            securityScopedURL = url
+            print("🔐 Security-scoped access for \(url.lastPathComponent): \(didStartSecurityAccess)")
+        }
+    }
+
+    private func releaseSecurityAccess() {
+        guard let url = securityScopedURL else { return }
+        if didStartSecurityAccess {
+            url.stopAccessingSecurityScopedResource()
+        }
+        securityScopedURL = nil
+        didStartSecurityAccess = false
+    }
 }
-
-
