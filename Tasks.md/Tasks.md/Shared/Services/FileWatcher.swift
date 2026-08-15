@@ -68,11 +68,8 @@ final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
         source?.setEventHandler {}
         source?.cancel()
         source = nil
-
-        if fileDescriptor >= 0 {
-            close(fileDescriptor)
-            fileDescriptor = -1
-        }
+        // Close the file descriptor only in the DispatchSource cancel handler
+        // (Apple requires this; closing here races with that handler).
 
         NSFileCoordinator.removeFilePresenter(self)
     }
@@ -113,11 +110,14 @@ final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
             // After rename/delete the descriptor often goes stale; rebuild on next poll.
         }
         source.setCancelHandler { [weak self] in
+            // Capture `fd` so the descriptor is closed exactly once even if `self` is gone.
+            close(fd)
             guard let self else { return }
-            if self.fileDescriptor >= 0 {
-                close(self.fileDescriptor)
+            self.lock.lock()
+            if self.fileDescriptor == fd {
                 self.fileDescriptor = -1
             }
+            self.lock.unlock()
         }
         source.resume()
         self.source = source
