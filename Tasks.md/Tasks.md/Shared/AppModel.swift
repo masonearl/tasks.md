@@ -17,8 +17,9 @@ final class AppModel: ObservableObject {
     init() {
 #if DEBUG
         // UI tests use their own document and never touch the user's selected file.
-        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tasks UI Preview.md")
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.arguments.contains("--store-screenshots") {
+            let isStoreCapture = ProcessInfo.processInfo.arguments.contains("--store-screenshots")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(isStoreCapture ? "Store Capture/Documents/My Tasks.md" : "Tasks UI Preview.md")
             let sample = """
             # Tasks
 
@@ -35,7 +36,8 @@ final class AppModel: ObservableObject {
             - [ ] Plan the weekend
             """
             do {
-                try sample.write(to: url, atomically: true, encoding: .utf8)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try (isStoreCapture ? Self.storeScreenshotMarkdown : sample).write(to: url, atomically: true, encoding: .utf8)
                 setSelectedFile(url, remember: false)
             } catch { fileErrorMessage = error.localizedDescription }
             return
@@ -47,6 +49,33 @@ final class AppModel: ObservableObject {
             ensureDefaultFile()
         }
     }
+
+#if DEBUG
+    private static var storeScreenshotMarkdown: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        let tomorrow = formatter.string(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+        return """
+        # My Tasks
+
+        ## Today
+        - [ ] Review the project proposal @priority(high) @due(\(today))
+        - [ ] Send the design feedback @due(\(today))
+        - [ ] Plan tomorrow's focus @priority(medium)
+
+        ## Work
+        - [ ] Draft October release notes @due(\(tomorrow))
+        - [ ] Weekly team review @repeat(weekly)
+        - [x] Publish the launch checklist
+
+        ## Personal
+        - [ ] Book a weekend hike
+        - [ ] Read 20 pages @repeat(daily)
+        """
+    }
+#endif
 
     func ensureDefaultFile() {
         guard selectedTasksFileUrl == nil else { return }

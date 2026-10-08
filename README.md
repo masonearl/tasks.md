@@ -4,7 +4,7 @@ A native SwiftUI app for Mac and iPhone. Your markdown file is the database: che
 
 [App Store](https://apps.apple.com/us/app/tasks-md/id6753879372) · [Source](https://github.com/masonearl/tasks.md) · Bundle ID `buildmase.app.Tasks-md`
 
-This update targets **1.1, build 4**. Repository build numbers do not indicate App Store publication.
+This update targets **1.2, build 5**. Repository build numbers do not indicate App Store publication.
 
 ## This update
 

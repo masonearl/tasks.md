@@ -2,7 +2,7 @@
 
 This describes the current code, not the App Store's publication status.
 
-## Included in 1.1, build 4
+## Included in 1.2, build 5
 
 - Native Mac and iPhone task lists over a user-selected markdown file.
 - First-launch sample, open/create file actions, remembered file access, external-edit watching, foreground and manual reload.
@@ -22,7 +22,7 @@ This describes the current code, not the App Store's publication status.
 2. **Undo:** restore a just-completed or renamed task with native undo support while preserving external changes.
 3. **Reminders:** local notifications for `@remind(...)`, permission handling, and rescheduling when another editor changes the file. No reminders are scheduled today.
 4. **File switching:** recent files and clearer file-provider/offline status.
-5. **Release validation:** exercise iCloud Drive on physical Mac/iPhone devices, verify on the minimum supported OS versions, and prepare store screenshots and a distribution-signed upload.
+5. **Device coverage:** exercise iCloud Drive on physical Mac/iPhone devices and verify on the minimum supported OS versions. Version 1.2 screenshots and distribution uploads are complete; see `RELEASE_NOTES.md` for submission status.
 
 ## Later possibilities
 

@@ -51,10 +51,19 @@ struct Tasks_mdApp: App {
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
     }
 
+    private var storeScreenshotMode: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--store-screenshots")
+#else
+        false
+#endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appModel)
+                .preferredColorScheme(storeScreenshotMode ? .light : nil)
 #if os(macOS)
                 .frame(minWidth: 520, minHeight: 400)
 #endif
@@ -72,7 +81,7 @@ struct Tasks_mdApp: App {
                 }
         }
 #if os(macOS)
-        .defaultSize(width: 720, height: 600)
+        .defaultSize(width: storeScreenshotMode ? 1280 : 720, height: storeScreenshotMode ? 800 : 600)
         .commands { macCommands }
 #endif
     }
