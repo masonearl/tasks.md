@@ -1,107 +1,69 @@
 # Tasks.md
 
-A native SwiftUI app for iOS and macOS that treats your **tasks.md** markdown file as the database. Edit tasks in Cursor (or any text editor); the app watches the same file and stays in sync via iCloud Drive (or any folder you pick).
+A native SwiftUI app for Mac and iPhone. Your markdown file is the database: check off, rename, or add tasks in the app, and edit the same file in any text editor.
 
-**App Store:** [Tasks.md](https://apps.apple.com/us/app/tasks-md/id6753879372) · Bundle ID `buildmase.app.Tasks-md` · One-time purchase · Seller Mason Earl  
-**Source:** [github.com/masonearl/tasks.md](https://github.com/masonearl/tasks.md)
+[App Store](https://apps.apple.com/us/app/tasks-md/id6753879372) · [Source](https://github.com/masonearl/tasks.md) · Bundle ID `buildmase.app.Tasks-md`
 
-> Live store listing is **v1.0**. This repo targets **v1.1** (marketing `1.1`, build `2+`).
+This update targets **1.1, build 4**. Repository build numbers do not indicate App Store publication.
 
----
+## This update
 
-## What it does
+- A compact, single-column Mac window with a persistent add-task field and category picker.
+- Search task titles and categories; switch between Open, Today (including overdue), All, and Done.
+- Collapse sections and sort within them by file order, due date, or priority. Sorting leaves the markdown order unchanged.
+- Due-date labels, priority flags, recurrence labels, and accessible task action menus.
+- **⌘N** focuses task entry; **⌘F** focuses search; **⌘O** opens a file. Return adds or saves a task; Escape cancels a title edit.
+- Visible errors with retry/choose-file actions. Failed file selection keeps the current document open.
+- Safe edits of duplicate task names, preservation of tags and indentation, and support for LF/CRLF files. Fenced code examples are excluded from tasks.
+- Daily/weekly/monthly repeats create one successor per completed occurrence in the same section, using calendar intervals.
 
-- Opens a local `.md` file (security-scoped bookmark remembers your choice)
-- Parses `##` / `###` sections and `- [ ]` / `- [x]` checkboxes
-- Supports tags: `@priority(...)`, `@due(...)`, `@remind(...)`, `@repeat(...)`, `@completed(...)`
-- Checking a box, editing a title, or adding a task writes back to the same markdown file
-- **File watching** (DispatchSource + NSFilePresenter + short mtime/size poll) reloads when Cursor or another editor saves
-- First launch copies a sample `My Tasks.md` into Documents if nothing is bookmarked yet
-- Foreground / scene-active reload as a safety net
-- No accounts, no subscription, no analytics
+## Files and sync
 
----
+On first launch, the app creates `My Tasks.md` in its Documents folder. Choose a different file using the folder button or Settings. A security-scoped bookmark remembers that choice.
 
-## Requirements
+Store the file in iCloud Drive or another file provider, then choose it on each device. The provider handles transport; the app watches local changes using file events, `NSFilePresenter`, and a short file-signature poll. There is no app account or custom CloudKit database.
 
-- iOS **18.6+** / macOS **15.6+** (as set in the Xcode project)
-- Xcode 16+ recommended for building
-- Optional: put `tasks.md` in iCloud Drive so phone and Mac share one file
+Edits read the latest document inside coordinated file access. If the file changed since a task was displayed, that task edit stops and the app loads the latest version for retry. An unreadable file is never treated as an empty document.
 
----
-
-## Markdown format
+## Markdown
 
 ```markdown
 # Tasks
 
 ## Work
-- [ ] Ship v1.1 file watching @priority(high) @due(2026-08-20)
-- [x] Publish App Store build @completed(2025-10-13T17:17:57Z)
+- [ ] Review the release @priority(high) @due(2026-10-12)
+- [x] Draft release notes @completed(2026-10-08T17:00:00Z)
 
 ## Habits
-- [ ] Daily review @repeat(daily)
+- [ ] Weekly review @repeat(weekly)
 ```
 
-The app is the UI; the file remains portable plain text.
+Sections use `##` or `###`. Tasks use `- [ ]`, `- [x]`, or `- [X]`. Dates support `YYYY-MM-DD` or ISO 8601 timestamps, with or without fractional seconds. Recognized tags include `priority`, `due`, `remind`, `repeat`, and `completed`; other tags are retained during title edits.
 
----
+Recurring tasks are processed when the file loads or the app becomes active. The completed occurrence receives an `@repeated(...)` marker after its successor is created, preventing duplicate generation on subsequent reloads. This is not a background scheduler. `@remind(...)` is parsed but does not schedule notifications.
 
-## Project layout
+## Build and verify
 
+- Deployment targets: **macOS 15.6+ / iOS 18.6+**.
+- Use **Xcode 26+** for the project's Swift concurrency settings; this update was verified with Xcode 27.
+- Open `Tasks.md/Tasks.md.xcodeproj`, select the **Tasks.md** scheme, and choose **My Mac** or an iPhone simulator.
+- Select your signing team when needed. The checked-in team is `3FXGJUET7Y`.
+
+```sh
+xcodebuild -project Tasks.md/Tasks.md.xcodeproj -scheme Tasks.md \
+  -destination 'platform=macOS' -parallel-testing-enabled NO test
+
+xcodebuild -project Tasks.md/Tasks.md.xcodeproj -scheme Tasks.md \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
-Tasks.md/
-├── Tasks.md/                 # App sources (synchronized Xcode folder)
-│   ├── Shared/               # Models, TaskStore, MarkdownParser, FileWatcher, views
-│   ├── iOS/                  # Document picker
-│   ├── macOS/                # NSOpenPanel picker
-│   ├── Tasks_mdApp.swift
-│   └── ContentView.swift
-├── Tasks.md.xcodeproj
-├── Tasks.mdTests/
-└── Tasks.mdUITests/
-```
 
-Root docs (`README.md`, `FEATURES.md`, `ARCHITECTURE.md`) describe product intent and roadmap. Wishlist items in `FEATURES.md` that are not shipped stay unchecked.
+Mac UI tests use a disposable sample document via the Debug-only `--ui-testing` launch argument and do not change the remembered file. Tests cover launch/relaunch, adding, searching, completion filters, renaming, shortcuts, parsing, duplicate edits, external conflicts, unreadable files, recurrence, and repeated atomic file replacements.
 
----
+## Project
 
-## Build & run
+- `Tasks.md/Tasks.md/Shared/`: models, file services, and task views.
+- `Tasks.md/Tasks.md/ContentView.swift`: shared app navigation and settings, plus the iOS file importer.
+- `Tasks.md/Tasks.md/macOS/`: native open/save panels.
+- `Tasks.md/Tasks.mdTests/`, `Tasks.md/Tasks.mdUITests/`: regression and interaction tests.
 
-1. Open `Tasks.md/Tasks.md.xcodeproj` in Xcode
-2. Select the **Tasks.md** scheme (iOS Simulator or My Mac)
-3. Ensure signing team `3FXGJUET7Y` (or your own) is selected
-4. Run
-
-### Verify file sync (v1.1)
-
-1. Run the app and choose (or keep) a `tasks.md` file
-2. Leave the app open
-3. In Cursor or TextEdit, add a line like `- [ ] Hello from Cursor` under a `##` section and save
-4. Within about a second the new task should appear in the app **without** tapping Refresh
-5. Toggle a checkbox in the app; the markdown file should update on disk
-
----
-
-## Versioning
-
-| | Live App Store | This branch (v1.1) |
-|--|--|--|
-| Marketing (`CFBundleShortVersionString`) | 1.0 | **1.1** |
-| Build (`CURRENT_PROJECT_VERSION`) | 1 (assumed from project) | **2** |
-
-Keep marketing at **1.1** and bump build for each App Store archive.
-
----
-
-## Privacy & business model
-
-- Local file access only (user-selected / bookmarked)
-- No login, no server-side task storage
-- Paid up front on the App Store ($2.99 at launch)
-
----
-
-## Roadmap
-
-See [FEATURES.md](FEATURES.md) for ideas (widgets, Watch, collaboration, analytics, etc.). Those are **not** part of v1.1.
+See [FEATURES.md](FEATURES.md) for next priorities and [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details. No accounts, subscription, analytics, or network service is required.

@@ -2,21 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>tasks.md needs access to your markdown files to display and update your tasks.</string>
-	<key>NSFileProviderDomainUsageDescription</key>
-	<string>tasks.md syncs your task files across your devices using iCloud.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>tasks.md needs to monitor your task file for changes to keep your tasks up to date.</string>
+	<string>tasks.md reads and updates the markdown file you choose.</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>CFBundleDisplayName</key>
 	<string>tasks.md</string>
 	<key>CFBundleName</key>
 	<string>tasks.md</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSQuitAlwaysKeepsWindows</key>
+	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Mason Earl</string>
 </dict>
 </plist>

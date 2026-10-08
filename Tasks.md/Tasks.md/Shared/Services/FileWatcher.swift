@@ -10,7 +10,7 @@ import Darwin
 ///
 /// Notifications are debounced so mid-save keystrokes do not thrash reloads.
 /// Callers should keep security-scoped access alive for the watched URL.
-final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
+nonisolated final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
     nonisolated let presentedItemURL: URL?
     nonisolated let presentedItemOperationQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -54,8 +54,7 @@ final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
 
     func stop() {
         lock.lock()
-        defer { lock.unlock() }
-        guard !isStopped else { return }
+        guard !isStopped else { lock.unlock(); return }
         isStopped = true
 
         debounceWorkItem?.cancel()
@@ -71,6 +70,7 @@ final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
         // Close the file descriptor only in the DispatchSource cancel handler
         // (Apple requires this; closing here races with that handler).
 
+        lock.unlock()
         NSFileCoordinator.removeFilePresenter(self)
     }
 
@@ -94,10 +94,7 @@ final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
     private func startDispatchSource(for url: URL) {
         let path = url.path
         let fd = open(path, O_EVTONLY)
-        guard fd >= 0 else {
-            print("⚠️ FileWatcher: could not open descriptor for \(path); relying on poll + presenter")
-            return
-        }
+        guard fd >= 0 else { return }
         fileDescriptor = fd
 
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -107,7 +104,7 @@ final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
         )
         source.setEventHandler { [weak self] in
             self?.scheduleChangeCheck(reason: "dispatch-source")
-            // After rename/delete the descriptor often goes stale; rebuild on next poll.
+            // Atomic replacement can stale the descriptor; polling continues to watch the path.
         }
         source.setCancelHandler { [weak self] in
             // Capture `fd` so the descriptor is closed exactly once even if `self` is gone.
@@ -162,20 +159,15 @@ final class FileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
         lock.unlock()
 
         guard changed else { return }
-        print("👀 FileWatcher: change detected (\(reason))")
         onChange()
     }
 
     /// mtime + size is enough to detect Cursor/iCloud writes without reading the whole file.
     nonisolated static func signature(for url: URL) -> String? {
-        let values = try? url.resourceValues(forKeys: [
-            .contentModificationDateKey,
-            .fileSizeKey,
-            .isRegularFileKey
-        ])
-        guard let values, values.isRegularFile != false else { return nil }
-        let mtime = values.contentModificationDate?.timeIntervalSince1970 ?? 0
-        let size = values.fileSize ?? -1
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        guard let attrs, attrs[.type] as? FileAttributeType != .typeDirectory else { return nil }
+        let mtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let size = (attrs[.size] as? NSNumber)?.intValue ?? -1
         return "\(mtime)|\(size)"
     }
 }

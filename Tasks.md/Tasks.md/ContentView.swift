@@ -6,497 +6,431 @@
 //
 
 import SwiftUI
-
 #if os(iOS)
-import UIKit
-final class PickerDataSource: NSObject, UIPickerViewDataSource {
-    let items: [String]
-    init(items: [String]) { self.items = items }
-    func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
-    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int { items.count }
-}
-final class PickerDelegate: NSObject, UIPickerViewDelegate {
-    let items: [String]
-    let onSelect: (String) -> Void
-    init(items: [String], onSelect: @escaping (String) -> Void) { self.items = items; self.onSelect = onSelect }
-    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? { items[row] }
-    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) { onSelect(items[row]) }
-}
+import UniformTypeIdentifiers
 #endif
 
 struct ContentView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
-    @State private var showNewTask = false
+#if os(iOS)
+    @State private var showFileImporter = false
+#endif
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) { EmptyView() }
-#endif
-                ToolbarItem {
-                    Button(action: presentPicker) {
-                        Label("Choose tasks.md…", systemImage: "folder")
-                            .labelStyle(.iconOnly)
-                    }
-                    .help("Choose tasks.md…")
-                }
-                ToolbarItem {
-                    if appModel.selectedTasksFileUrl != nil {
-                        Button(action: { showNewTask = true }) {
-                            Label("Add Task", systemImage: "plus")
-                                .labelStyle(.iconOnly)
-                        }
-                        .help("Add Task")
-                    }
-                }
-#if os(macOS)
-                ToolbarItem {
-                    if appModel.selectedTasksFileUrl != nil {
-                        Button(action: { appModel.loadFromDisk() }) {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                                .labelStyle(.iconOnly)
-                        }
-                        .help("Refresh from file")
-                    }
-                }
-#endif
-                ToolbarItem {
-                    Button(action: { showSettings = true }) {
-                        Label("Settings", systemImage: "gearshape")
+        NavigationStack {
+            Group {
+                if appModel.selectedTasksFileUrl != nil {
+                    TaskListView(store: appModel.store)
+                        .id(appModel.selectedTasksFileUrl)
+                } else {
+                    ContentUnavailableView {
+                        Label("No tasks file", systemImage: "doc.text")
+                    } description: {
+                        Text("Choose a markdown file or create a new one.")
+                    } actions: {
+                        Button("Choose tasks.md…") { presentPicker() }
+                        Button("Create New File…") { presentCreateFile() }
                     }
                 }
             }
-        } detail: {
-            content
-        }
+            .navigationTitle(appModel.selectedTasksFileUrl?.deletingPathExtension().lastPathComponent ?? "tasks.md")
 #if os(macOS)
-        .navigationTitle(appModel.selectedTasksFileUrl?.lastPathComponent ?? "tasks.md")
+            .navigationSubtitle(appModel.selectedTasksFileUrl?.deletingLastPathComponent().lastPathComponent ?? "")
 #endif
+            .toolbar {
+                ToolbarItem {
+                    Button("Choose tasks.md…", systemImage: "folder", action: presentPicker)
+                        .help("Choose tasks.md…")
+                }
+                ToolbarItem {
+                    Button("Add Task", systemImage: "plus", action: presentAddTask)
+                        .help("Add Task")
+                        .accessibilityIdentifier("addTaskToolbarButton")
+                }
+                ToolbarItem {
+                    Button("Reload file", systemImage: "arrow.clockwise") { appModel.loadFromDisk() }
+                        .help("Reload from disk")
+                }
+                ToolbarItem {
+                    Button("Settings", systemImage: "gearshape") { showSettings = true }
+                }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let error = appModel.fileErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.callout).foregroundStyle(.red)
+                    Spacer(minLength: 0)
+                    Button("Retry") { appModel.retryFile() }
+                    Button("Choose…", action: presentPicker)
+                }
+                .padding(12)
+                .background(.bar)
+            }
+        }
         .onAppear(perform: maybePromptForFile)
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { appModel.reloadOnForeground() }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsSheet(onChoose: { presentPicker() })
-                .environmentObject(appModel)
-        }
-        .sheet(isPresented: $showNewTask) {
-            NewTaskSheet(store: appModel.store)
+            SettingsSheet(
+                onChoose: presentPicker,
+                onCreate: presentCreateFile
+            )
+            .environmentObject(appModel)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFilePicker)) { _ in
             presentPicker()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .addNewTask)) { _ in
-            if appModel.selectedTasksFileUrl != nil {
-                showNewTask = true
-            }
-        }
 #if os(iOS)
-        .onTapGesture {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: Self.markdownTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            if case .failure(let error) = result {
+                appModel.fileErrorMessage = error.localizedDescription
+            }
+            if case .success(let urls) = result, let url = urls.first {
+                let accessed = url.startAccessingSecurityScopedResource()
+                appModel.setSelectedFile(url)
+                if accessed {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
         }
 #endif
     }
 
-    @ViewBuilder
-    private var sidebar: some View {
-#if os(macOS)
-        // macOS sidebar shows file info and navigation
-        if let url = appModel.selectedTasksFileUrl {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Current File")
-                        .font(.headline)
-                    Text(url.lastPathComponent)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Categories")
-                        .font(.headline)
-                    ForEach(appModel.store.availableSectionTitles(), id: \.self) { section in
-                        Button(section) {
-                            // Could add section filtering here later
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.primary)
-                    }
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            VStack(spacing: 12) {
-                Text("Select your tasks.md file to begin")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Button("Choose tasks.md…") { presentPicker() }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+#if os(iOS)
+    private static var markdownTypes: [UTType] {
+        var types: [UTType] = [.plainText]
+        if let markdown = UTType(filenameExtension: "md") {
+            types.append(markdown)
         }
-#else
-        // iOS sidebar shows tasks
-        if let _ = appModel.selectedTasksFileUrl {
-            TaskListView(store: appModel.store)
-        } else {
-            VStack(spacing: 12) {
-                Text("Select your tasks.md file to begin")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Button("Choose tasks.md…") { presentPicker() }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-#endif
+        return types
     }
-
-    @ViewBuilder
-    private var content: some View {
-#if os(macOS)
-        // macOS main content shows tasks
-        if let _ = appModel.selectedTasksFileUrl {
-            TaskListView(store: appModel.store)
-        } else {
-            VStack(spacing: 12) {
-                Text("No file selected")
-                Button(action: presentPicker) {
-                    Label("Choose tasks.md…", systemImage: "folder")
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-#else
-        // iOS detail view shows file info
-        if let url = appModel.selectedTasksFileUrl {
-            VStack(spacing: 8) {
-                Text("File: \(url.lastPathComponent)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding()
-        } else {
-            VStack(spacing: 12) {
-                Text("No file selected")
-                Button(action: presentPicker) {
-                    Label("Choose tasks.md…", systemImage: "folder")
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
 #endif
-    }
 
     private func maybePromptForFile() {
-        guard appModel.selectedTasksFileUrl == nil else { return }
-#if os(macOS)
-        // Only auto-prompt if we have never stored a bookmark path
-        if UserDefaults.standard.string(forKey: "tasksFilePath") == nil && appModel.selectedTasksFileUrl == nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                presentPicker()
-            }
+        if appModel.selectedTasksFileUrl == nil && appModel.fileErrorMessage == nil {
+            appModel.ensureDefaultFile()
         }
-#endif
+    }
+
+    private func presentAddTask() {
+        if appModel.selectedTasksFileUrl == nil {
+            appModel.ensureDefaultFile()
+        }
+        NotificationCenter.default.post(name: .focusAddComposer, object: nil)
     }
 
     private func presentPicker() {
 #if os(macOS)
-        TasksFilePicker.pick { url in 
-            print("📁 Picker returned: \(url.path)")
-            appModel.setSelectedFile(url) 
+        TasksFilePicker.pick { url in
+            appModel.setSelectedFile(url)
         }
 #else
-        // Present iOS picker via sheet
-        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-        scene?.windows.first?.rootViewController?.present(UIHostingController(rootView: MarkdownDocumentPicker { url in
-            print("📁 iOS Picker returned: \(url.path)")
-            appModel.setSelectedFile(url)
-            scene?.windows.first?.rootViewController?.dismiss(animated: true)
-        }), animated: true)
+        showFileImporter = true
 #endif
     }
 
-
+    private func presentCreateFile() {
+#if os(macOS)
+        TasksFilePicker.createNew { result in
+            switch result {
+            case .success(let url): appModel.setSelectedFile(url)
+            case .failure(let error): appModel.fileErrorMessage = error.localizedDescription
+            }
+        }
+#else
+        let name = NewTasksFileName.make()
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(name)
+        do {
+            try DefaultTasksFile.starterMarkdown.write(to: url, atomically: true, encoding: .utf8)
+            appModel.setSelectedFile(url)
+        } catch {
+            appModel.fileErrorMessage = error.localizedDescription
+        }
+#endif
+    }
 }
 
 private struct SettingsSheet: View {
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.dismiss) private var dismiss
     let onChoose: () -> Void
+    let onCreate: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+#if os(macOS)
+        VStack(alignment: .leading, spacing: 16) {
             Text("Settings")
                 .font(.title2)
-            HStack {
-                Text("Selected file:")
+                .fontWeight(.semibold)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Tasks file")
+                    .font(.headline)
                 Text(appModel.selectedTasksFileUrl?.path ?? "None")
-                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
                     .truncationMode(.middle)
             }
+
             HStack {
-                Button(action: onChoose) {
-                    Label("Choose tasks.md…", systemImage: "folder")
-                        .labelStyle(.iconOnly)
-                }
+                Button("Choose…") { dismiss(); onChoose() }
+                Button("Create New…") { dismiss(); onCreate() }
                 Spacer()
             }
-            Spacer()
+
+            Text("Checking a box writes back to this markdown file. You can also edit it in any text editor.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
         }
-        .padding()
+        .padding(20)
         .frame(minWidth: 420, minHeight: 220)
+#else
+        NavigationStack {
+            Form {
+                Section("Tasks file") {
+                    Text(appModel.selectedTasksFileUrl?.lastPathComponent ?? "None")
+                        .foregroundStyle(.secondary)
+                    Button("Choose…") { dismiss(); onChoose() }
+                    Button("Create New…") { dismiss(); onCreate() }
+                }
+                Section {
+                    Text("Checking a box writes back to this markdown file. You can also edit it in any text editor.")
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+#endif
     }
 }
 
 struct NewTaskSheet: View {
     @ObservedObject var store: TaskStore
     @Environment(\.dismiss) private var dismiss
-    
+
     @State private var taskTitle = ""
     @State private var selectedSection = ""
     @FocusState private var isTitleFocused: Bool
     @State private var showNewCategorySheet = false
-    
-    var availableSections: [String] {
-        let sections = store.availableSectionTitles()
-        return sections.isEmpty ? ["Tasks"] : sections
+    @State private var errorMessage: String?
+
+    private var canSubmit: Bool {
+        !taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    
+
+    var availableSections: [String] {
+        var sections = store.availableSectionTitles()
+        if sections.isEmpty { sections = ["Tasks"] }
+        if !selectedSection.isEmpty && !sections.contains(selectedSection) {
+            sections.append(selectedSection)
+        }
+        return sections
+    }
+
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // Header
-                VStack(spacing: 16) {
-                    Text("Add New Task")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    
-                    Text("Choose a category and enter your task")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+#if os(macOS)
+        macBody
+#else
+        iosBody
+#endif
+    }
+
+#if os(macOS)
+    private var macBody: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add Task")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            TextField("What needs to be done?", text: $taskTitle)
+                .textFieldStyle(.roundedBorder)
+                .focused($isTitleFocused)
+                .accessibilityIdentifier("newTaskTitleField")
+                .onSubmit { addTask() }
+
+            Picker("Category", selection: $selectedSection) {
+                ForEach(availableSections, id: \.self) { section in
+                    Text(section).tag(section)
                 }
-                .padding(.top, 20)
-                .padding(.bottom, 32)
-                
-                VStack(spacing: 20) {
-                    // Category Selection
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Category", systemImage: "folder")
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        
-                        Menu {
-                            ForEach(availableSections, id: \.self) { section in
-                                Button(section) {
-                                    selectedSection = section
-                                }
-                            }
-                            
-                            Divider()
-                            
-                            Button("Create New Category...") {
-                                showNewCategorySheet = true
-                            }
-                        } label: {
-                            HStack {
-                                Text(selectedSection.isEmpty ? "Select Category" : selectedSection)
-                                    .foregroundStyle(selectedSection.isEmpty ? .secondary : .primary)
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.down")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            #if os(macOS)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            #else
-                            .background(Color(UIColor.secondarySystemBackground))
-                            #endif
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+
+            Button("Create New Category…") {
+                showNewCategorySheet = true
+            }
+            .buttonStyle(.borderless)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .foregroundStyle(.red)
+                    .font(.callout)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Add Task") { addTask() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSubmit)
+                    .accessibilityIdentifier("addTaskSubmitButton")
+            }
+        }
+        .padding(20)
+        .onAppear(perform: prepare)
+        .sheet(isPresented: $showNewCategorySheet) {
+            NewCategorySheet { newCategory in
+                selectedSection = newCategory
+            }
+            .frame(width: 360, height: 180)
+        }
+    }
+#endif
+
+#if !os(macOS)
+    private var iosBody: some View {
+        NavigationStack {
+            Form {
+                Section("Task") {
+                    TextField("What needs to be done?", text: $taskTitle, axis: .vertical)
+                        .focused($isTitleFocused)
+                        .lineLimit(2...4)
+                        .accessibilityIdentifier("newTaskTitleField")
+                }
+                Section("Category") {
+                    Picker("Category", selection: $selectedSection) {
+                        ForEach(availableSections, id: \.self) { section in
+                            Text(section).tag(section)
                         }
                     }
-                    
-                    // Task Input
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Task", systemImage: "checkmark.circle")
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        
-                        TextField("What needs to be done?", text: $taskTitle, axis: .vertical)
-                            .focused($isTitleFocused)
-                            .textFieldStyle(.plain)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            #if os(macOS)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            #else
-                            .background(Color(UIColor.secondarySystemBackground))
-                            #endif
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .lineLimit(2...4)
+                    Button("Create New Category…") {
+                        showNewCategorySheet = true
                     }
-                    
-                    Spacer(minLength: 40)
                 }
-                .padding(.horizontal, 24)
-                
-                // Bottom buttons
-                HStack(spacing: 16) {
-                    Button("Cancel") {
-                        dismiss()
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    #if os(macOS)
-                    .background(Color(NSColor.controlColor))
-                    #else
-                    .background(Color(UIColor.systemGray5))
-                    #endif
-                    .foregroundStyle(.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    
-                    Button("Add Task") {
-                        addTask()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    #if os(macOS)
-                    .background(taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color(NSColor.disabledControlTextColor) : Color.accentColor)
-                    #else
-                    .background(taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color(UIColor.systemGray3) : Color.accentColor)
-                    #endif
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .disabled(taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 20)
             }
-            #if os(macOS)
-            .background(Color(NSColor.windowBackgroundColor))
-            #else
-            .background(Color(UIColor.systemBackground))
-            #endif
-        }
-        .onAppear {
-            selectedSection = availableSections.first ?? "Tasks"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                isTitleFocused = true
+            .navigationTitle("Add Task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add Task") { addTask() }
+                        .disabled(!canSubmit)
+                        .accessibilityIdentifier("addTaskSubmitButton")
+                }
             }
         }
+        .onAppear(perform: prepare)
         .sheet(isPresented: $showNewCategorySheet) {
             NewCategorySheet { newCategory in
                 selectedSection = newCategory
             }
         }
     }
-    
+#endif
+
+    private func prepare() {
+        if selectedSection.isEmpty {
+            selectedSection = availableSections.first ?? "Tasks"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            isTitleFocused = true
+        }
+    }
+
     private func addTask() {
         let trimmedTitle = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
-        
-        store.addTask(title: trimmedTitle, inSectionTitle: selectedSection)
-        dismiss()
+        let section = selectedSection.isEmpty ? "Tasks" : selectedSection
+        if store.addTask(title: trimmedTitle, inSectionTitle: section) {
+            dismiss()
+        } else {
+            errorMessage = store.lastErrorMessage ?? "Couldn't add the task. Try choosing your tasks.md file again."
+        }
     }
 }
 
 struct NewCategorySheet: View {
     @Environment(\.dismiss) private var dismiss
     let onCategoryCreated: (String) -> Void
-    
+
     @State private var categoryName = ""
     @FocusState private var isFocused: Bool
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 24) {
-                VStack(spacing: 16) {
-                    Text("Create New Category")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    Text("Add a new section to organize your tasks")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 20)
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("Category Name", systemImage: "folder.badge.plus")
-                        .font(.headline)
-                    
-                    TextField("e.g., Work Tasks, Personal, etc.", text: $categoryName)
-                        .focused($isFocused)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        #if os(macOS)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        #else
-                        .background(Color(UIColor.secondarySystemBackground))
-                        #endif
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 16) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    #if os(macOS)
-                    .background(Color(NSColor.controlColor))
-                    #else
-                    .background(Color(UIColor.systemGray5))
-                    #endif
-                    .foregroundStyle(.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    
-                    Button("Create") {
-                        createCategory()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    #if os(macOS)
-                    .background(categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color(NSColor.disabledControlTextColor) : Color.accentColor)
-                    #else
-                    .background(categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color(UIColor.systemGray3) : Color.accentColor)
-                    #endif
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .disabled(categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            .padding(24)
-            #if os(macOS)
-            .background(Color(NSColor.windowBackgroundColor))
-            #else
-            .background(Color(UIColor.systemBackground))
-            #endif
-        }
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                isFocused = true
-            }
-        }
+
+    private var canCreate: Bool {
+        !categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    
+
+    var body: some View {
+#if os(macOS)
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Create New Category")
+                .font(.title2)
+                .fontWeight(.semibold)
+            TextField("e.g. Work, Personal", text: $categoryName)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+                .onSubmit { createCategory() }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") { createCategory() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canCreate)
+            }
+        }
+        .padding(20)
+        .onAppear { isFocused = true }
+#else
+        NavigationStack {
+            Form {
+                TextField("e.g. Work, Personal", text: $categoryName)
+                    .focused($isFocused)
+            }
+            .navigationTitle("New Category")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") { createCategory() }
+                        .disabled(!canCreate)
+                }
+            }
+        }
+        .onAppear { isFocused = true }
+#endif
+    }
+
     private func createCategory() {
         let trimmed = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

@@ -19,13 +19,14 @@ final class FileCoordinatorService {
         return result
     }
 
-    func write(url: URL, update: (String) -> String) throws {
+    func write(url: URL, update: (String) throws -> String) throws {
         var coordError: NSError?
         var innerError: Error?
         coordinator.coordinate(writingItemAt: url, options: .forMerging, error: &coordError) { writeUrl in
             do {
-                let current = (try? String(contentsOf: writeUrl, encoding: .utf8)) ?? ""
-                let next = update(current)
+                let current = try String(contentsOf: writeUrl, encoding: .utf8)
+                let next = try update(current)
+                guard next != current else { return }
                 try next.write(to: writeUrl, atomically: true, encoding: .utf8)
             } catch {
                 innerError = error
