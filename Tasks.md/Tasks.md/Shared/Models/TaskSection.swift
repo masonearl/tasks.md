@@ -6,8 +6,8 @@ public struct TaskSection: Identifiable, Hashable, Codable {
     public var path: [String]
     public var tasks: [TaskItem]
 
-    public init(title: String, path: [String], tasks: [TaskItem]) {
-        self.id = (path + [title]).joined(separator: "/")
+    public init(title: String, path: [String], tasks: [TaskItem], id: String? = nil) {
+        self.id = id ?? (path + [title]).joined(separator: "/")
         self.title = title
         self.path = path
         self.tasks = tasks

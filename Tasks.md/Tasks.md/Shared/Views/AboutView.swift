@@ -65,7 +65,7 @@ struct AboutView: View {
                 .buttonStyle(.bordered)
                 #endif
                 
-                Text("© 2025 Mason Earl")
+                Text("© 2026 Mason Earl")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

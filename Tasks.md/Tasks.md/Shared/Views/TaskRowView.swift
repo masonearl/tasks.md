@@ -2,169 +2,116 @@ import SwiftUI
 
 struct TaskRowView: View {
     let task: TaskItem
-    @ObservedObject var store: TaskStore
+    let isEditing: Bool
+    var onToggle: () -> Void
+    var onBeginEditing: () -> Void
+    var onRename: (String) -> Void
+    var onCancelEditing: () -> Void
+    var onRepeat: () -> Void
 
-    @State private var draftTitle: String
-    @FocusState private var isFocused: Bool
-    @State private var showRepeatSheet = false
-
-    init(task: TaskItem, store: TaskStore) {
-        self.task = task
-        self.store = store
-        _draftTitle = State(initialValue: task.title)
-    }
+    @State private var draftTitle = ""
+    @FocusState private var titleFocused: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Button(action: { store.toggle(task: task) }) {
-                Image(systemName: task.isCompleted ? "checkmark.square" : "square")
+        HStack(spacing: 8) {
+            Button(action: onToggle) {
+                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 16))
+                    .foregroundStyle(task.isCompleted ? Color.accentColor : Color.secondary)
+                    .frame(width: 24, height: 28)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(task.isCompleted ? "Mark incomplete" : "Mark complete"): \(task.title)")
 
-            VStack(alignment: .leading, spacing: 6) {
-                if #available(iOS 16.0, macOS 13.0, *) {
-                    TextField("Task title", text: $draftTitle, axis: .vertical)
-                        .lineLimit(1...6)
-                        .focused($isFocused)
-                        .textFieldStyle(.plain)
-                        .onSubmit(commit)
-                        .onChange(of: isFocused) { _, focused in if !focused { commit() } }
-                } else {
+            VStack(alignment: .leading, spacing: 3) {
+                if isEditing {
                     TextField("Task title", text: $draftTitle)
-                        .focused($isFocused)
                         .textFieldStyle(.plain)
+                        .focused($titleFocused)
                         .onSubmit(commit)
-                        .onChange(of: isFocused) { _, focused in if !focused { commit() } }
-                }
-
-                HStack(spacing: 8) {
-                    if let p = task.tags.priority {
-                        Text(p.rawValue.capitalized)
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(priorityColor(p).opacity(0.15))
-                            .foregroundStyle(priorityColor(p))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    
-                    if task.tags.custom["repeat"] != nil {
-                        Text("Repeat")
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.15))
-                            .foregroundStyle(.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    
-                    Spacer()
-                }
-            }
-            
-            Spacer()
-            
-            // Repeat button on the far right
-            Button(action: showRepeatOptions) {
-                Image(systemName: "repeat")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-#if os(iOS)
-            .actionSheet(isPresented: $showRepeatSheet) {
-                ActionSheet(
-                    title: Text("Repeat Task"),
-                    buttons: [
-                        .default(Text("Daily")) { addRepeatTag("daily") },
-                        .default(Text("Weekly")) { addRepeatTag("weekly") },
-                        .default(Text("Monthly")) { addRepeatTag("monthly") },
-                        task.tags.custom["repeat"] != nil ? 
-                            .destructive(Text("Remove Repeat")) { removeRepeatTag() } : nil,
-                        .cancel()
-                    ].compactMap { $0 }
-                )
-            }
-#else
-            .popover(isPresented: $showRepeatSheet) {
-                VStack(spacing: 12) {
-                    Text("Repeat Task")
-                        .font(.headline)
-                        .padding(.top, 8)
-                    
-                    Button("Daily") {
-                        addRepeatTag("daily")
-                        showRepeatSheet = false
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    Button("Weekly") {
-                        addRepeatTag("weekly")
-                        showRepeatSheet = false
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    Button("Monthly") {
-                        addRepeatTag("monthly")
-                        showRepeatSheet = false
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    if task.tags.custom["repeat"] != nil {
-                        Button("Remove Repeat") {
-                            removeRepeatTag()
-                            showRepeatSheet = false
-                        }
-                        .buttonStyle(.bordered)
-                        .foregroundStyle(.red)
-                    }
-                    
-                    Button("Cancel") {
-                        showRepeatSheet = false
-                    }
-                    .buttonStyle(.bordered)
-                    .padding(.bottom, 8)
-                }
-                .padding()
-                .frame(width: 200)
-            }
+#if os(macOS)
+                        .onExitCommand { onCancelEditing() }
 #endif
+                        .accessibilityIdentifier("editTaskTitleField")
+                } else {
+                    Button(action: onBeginEditing) {
+                        Text(task.title)
+                            .strikethrough(task.isCompleted)
+                            .foregroundStyle(task.isCompleted ? .secondary : .primary)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit task")
+                }
+                if task.tags.dueDate != nil || task.tags.custom["repeat"] != nil {
+                    HStack(spacing: 10) {
+                        if let due = task.tags.dueDate {
+                            Label(dueLabel(due), systemImage: "calendar")
+                                .foregroundStyle(isOverdue(due) ? Color.red : Color.secondary)
+                        }
+                        if let frequency = task.tags.custom["repeat"] {
+                            Label(frequency.capitalized, systemImage: "repeat").foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.caption2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let priority = task.tags.priority {
+                Image(systemName: "flag.fill")
+                    .font(.caption)
+                    .foregroundStyle(priorityColor(priority))
+                    .help("\(priority.rawValue.capitalized) priority")
+                    .accessibilityLabel("\(priority.rawValue.capitalized) priority")
+            }
+            Menu {
+                Button("Rename", action: onBeginEditing)
+                Button("Repeat…", action: onRepeat)
+                Button(task.isCompleted ? "Mark Incomplete" : "Mark Complete", action: onToggle)
+            } label: { Image(systemName: "ellipsis") }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .frame(width: 24, height: 28)
+            .accessibilityLabel("Options for \(task.title)")
+        }
+        .padding(.vertical, 3)
+        .contextMenu {
+            Button("Rename", action: onBeginEditing)
+            Button("Repeat…", action: onRepeat)
+        }
+        .onChange(of: isEditing) { _, editing in
+            if editing {
+                draftTitle = task.title
+                titleFocused = true
+            } else { titleFocused = false }
+        }
+        .onChange(of: titleFocused) { _, focused in
+            if isEditing && !focused { commit() }
         }
     }
 
     private func commit() {
         let trimmed = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed != task.title, !trimmed.isEmpty else { return }
-        store.updateTitle(task: task, newTitle: trimmed)
+        if trimmed.isEmpty || trimmed == task.title { onCancelEditing() }
+        else { onRename(trimmed) }
     }
-    
-    private func addRepeatTag(_ repeatType: String) {
-        let trimmed = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            store.updateTitle(task: task, newTitle: trimmed)
-        }
-        store.addRepeatTag(task: task, repeatType: repeatType)
+    private func isOverdue(_ date: Date) -> Bool {
+        !task.isCompleted && date < Calendar.current.startOfDay(for: Date())
     }
-    
-    private func removeRepeatTag() {
-        let trimmed = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            store.updateTitle(task: task, newTitle: trimmed)
-        }
-        store.removeRepeatTag(task: task)
+    private func dueLabel(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) { return "Today" }
+        if Calendar.current.isDateInTomorrow(date) { return "Tomorrow" }
+        let label = date.formatted(.dateTime.month(.abbreviated).day())
+        return isOverdue(date) ? "Overdue · \(label)" : label
     }
-    
-    private func showRepeatOptions() {
-        showRepeatSheet = true
-    }
-
-    private func priorityColor(_ p: TaskItem.Priority) -> Color {
-        switch p {
+    private func priorityColor(_ priority: TaskItem.Priority) -> Color {
+        switch priority {
         case .high: return .red
         case .medium: return .orange
-        case .low: return .yellow
+        case .low: return .blue
         }
     }
 }
-
-
